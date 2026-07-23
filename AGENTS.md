@@ -115,6 +115,16 @@ Time,Pair,Side,Price,Executed,Amount,Fee
 4. `Side`: yalnız `BUY` / `SELL` (case-insensitive).
 5. Sayısal alanlar negatif/sıfır olamaz — **Fee sıfır olabilir**.
 6. **Bozuk satır import'u durdurmaz**: geçerliler işlenir, bozuklar `(satır no, sebep)` ile raporlanır.
+7. **Rakamla başlayan ticker'lar** (`1INCH`, `1000SATS`) sayı/varlık ayrımını belirsiz yapar:
+   `"12.51INCH"` hem `12.5 × 1INCH` hem `12.51 × INCH` okunabilir. Bu yüzden `Executed`/`Amount`
+   ayrıştırılırken varlık **pair'den bilinerek** suffix olarak sıyrılır (`split_amount_expecting`);
+   ilk-harf taraması yalnızca fee gibi varlığı önceden bilinmeyen alanlarda fallback'tir.
+8. Zorunlu ek ret sebepleri: `Executed`/`Amount` varlığı pair ile uyuşmuyorsa **assetMismatch**;
+   BUY'da base varlıkta ödenen fee tüm fill'i yutuyorsa (`fee >= executed`) **feeExceedsQuantity**.
+   İkincisi olmasa açılacak lot sıfır miktarlı olur, o satırın maliyeti sahipsiz kalır ve §8(d)
+   korunum invariantı kırılırdı.
+9. Header karşılaştırması **büyük/küçük harf duyarsız ama sıra duyarlıdır** (kolonlar kendi birimini
+   taşımadığı için sırası değişmiş bir dosya makul görünen saçmalık üretir). UTF-8 BOM temizlenir.
 
 ---
 
@@ -133,6 +143,14 @@ varsayılan: tekilleştir + "N mükerrer satır atlandı" uyarısı. Ayarlardan 
 Pair başına `VecDeque<Lot>`. BUY → push_back. SELL → front'tan eşleştir; kısmi tüketimde maliyet
 **oransal** bölünür, tam tüketimde lot pop edilir. Her SELL bir `RealizedEvent` üretir ve
 **hangi lottan ne kadar eşleştiği** (`matched_lots`) izlenebilirlik için saklanır.
+
+**Lot maliyeti birim değil, TOPLAM olarak saklanır** (`Lot::cost_remaining` otoritedir;
+`unit_cost_quote` yalnızca görüntüleme içindir). Sebep: `Decimal` bölmesi ancak sonuç 28 anlamlı
+haneye sığdığında kesindir — `2000 / 0.999` sığmaz. Dilimler `unit_cost × miktar` ile fiyatlansaydı
+yuvarlama hatası sızar ve §8(d) invariantı birebir `Decimal` karşılaştırmasında düşerdi.
+`Lot::consume` her dilime yüklenen maliyeti **düşerek** verir; lot tamamen tükendiğinde kalan
+maliyetin tamamını iade eder. Böylece korunum kurgu gereği sağlanır, yuvarlama artığı lotta kalır.
+`avg_cost` motorundaki havuz da aynı şekilde çalışır.
 
 ### 6.4 Fee muhasebesi
 | Durum | Kural |

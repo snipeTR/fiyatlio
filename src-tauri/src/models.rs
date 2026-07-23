@@ -239,11 +239,25 @@ pub struct DedupKey {
 // ---------------------------------------------------------------------------
 
 /// An open inventory lot: base quantity still on hand, plus the quote-denominated
-/// unit cost it was acquired at.
+/// cost still carried by that quantity.
 ///
-/// Cost is stored as a **unit** cost rather than a total so that a partial
-/// consumption is an exact proportional split (`unit_cost * consumed_qty`) with
-/// no accumulated rounding drift.
+/// # Why cost is stored as a TOTAL, not as a unit cost
+///
+/// A unit cost has to be derived by dividing (`cost / qty`), and `Decimal`
+/// division is only exact when the result fits in 28 significant digits —
+/// `2000 / 0.999` does not. If slices were then priced as `unit_cost * take`,
+/// the rounding error would leak and the invariant that AGENTS.md §8(d) requires
+///
+/// ```text
+/// total_buy_cost == matched_cost_basis + remaining_lot_cost
+/// ```
+///
+/// would fail on exact `Decimal` comparison.
+///
+/// Storing `cost_remaining` and subtracting exactly what each slice was charged
+/// makes conservation hold by construction: whatever rounding a proportional
+/// split introduces simply stays in the lot, and a full consumption hands back
+/// the entire remainder. `unit_cost_quote` is kept purely for display.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Lot {
@@ -251,8 +265,13 @@ pub struct Lot {
     #[serde(with = "rust_decimal::serde::str")]
     pub qty_remaining: Decimal,
 
-    /// Cost per 1 unit of base, in the pair's quote asset, fees already folded in
-    /// per AGENTS.md §6.4.
+    /// **Authoritative.** Quote-denominated cost still carried by
+    /// `qty_remaining`, fees already folded in per AGENTS.md §6.4.
+    #[serde(with = "rust_decimal::serde::str")]
+    pub cost_remaining: Decimal,
+
+    /// Display-only convenience: `cost_remaining / qty_remaining`. Never use this
+    /// for accounting — see the type-level note above.
     #[serde(with = "rust_decimal::serde::str")]
     pub unit_cost_quote: Decimal,
 
@@ -264,9 +283,59 @@ pub struct Lot {
 }
 
 impl Lot {
+    /// Opens a lot for `qty` units acquired for a total of `cost`.
+    pub fn new(qty: Decimal, cost: Decimal, acquired_at: DateTime<Utc>, trade_id: u64) -> Self {
+        let mut lot = Self {
+            qty_remaining: qty,
+            cost_remaining: cost,
+            unit_cost_quote: Decimal::ZERO,
+            acquired_at,
+            trade_id,
+        };
+        lot.refresh_unit_cost();
+        lot
+    }
+
     /// Remaining cost carried by this lot.
     pub fn remaining_cost(&self) -> Decimal {
-        self.unit_cost_quote * self.qty_remaining
+        self.cost_remaining
+    }
+
+    /// Removes up to `qty` units and returns the **exact** cost charged to that
+    /// slice.
+    ///
+    /// Consuming the lot in full returns everything left, so no residual cost can
+    /// ever be stranded in a lot whose quantity has reached zero. A partial
+    /// consumption splits proportionally and keeps the rounding remainder in the
+    /// lot. `qty` is clamped to what is available rather than asserted, so a
+    /// caller bug degrades into a short fill instead of a panic.
+    pub fn consume(&mut self, qty: Decimal) -> Decimal {
+        let take = qty.min(self.qty_remaining);
+        if take <= Decimal::ZERO {
+            return Decimal::ZERO;
+        }
+
+        let cost = if take == self.qty_remaining {
+            std::mem::replace(&mut self.cost_remaining, Decimal::ZERO)
+        } else {
+            // Compute before mutating `qty_remaining` — it is the denominator.
+            let slice = self.cost_remaining * take / self.qty_remaining;
+            self.cost_remaining -= slice;
+            slice
+        };
+
+        self.qty_remaining -= take;
+        self.refresh_unit_cost();
+        cost
+    }
+
+    /// Recomputes the display-only unit cost. Leaves the previous value in place
+    /// once the lot is empty, where the quotient is undefined but the last known
+    /// unit cost is still the useful thing to show.
+    fn refresh_unit_cost(&mut self) {
+        if self.qty_remaining > Decimal::ZERO {
+            self.unit_cost_quote = self.cost_remaining / self.qty_remaining;
+        }
     }
 }
 
@@ -738,13 +807,38 @@ mod tests {
 
     #[test]
     fn lot_remaining_cost_is_exact() {
-        let lot = Lot {
-            qty_remaining: dec!(0.3),
-            unit_cost_quote: dec!(2202.20),
-            acquired_at: Utc::now(),
-            trade_id: 1,
-        };
-        assert_eq!(lot.remaining_cost(), dec!(660.660));
+        let lot = Lot::new(dec!(0.3), dec!(660.66), Utc::now(), 1);
+        assert_eq!(lot.remaining_cost(), dec!(660.66));
+        assert_eq!(lot.unit_cost_quote, dec!(2202.20));
+    }
+
+    #[test]
+    fn lot_consumption_conserves_cost_exactly() {
+        // 2000 / 0.999 is a non-terminating quotient — the case a unit-cost
+        // representation would round and leak. Cost must still be conserved to
+        // the last digit across an arbitrary sequence of partial consumptions.
+        let total_cost = dec!(2000);
+        let mut lot = Lot::new(dec!(0.999), total_cost, Utc::now(), 1);
+
+        let mut charged = Decimal::ZERO;
+        charged += lot.consume(dec!(0.3));
+        charged += lot.consume(dec!(0.4));
+        assert!(lot.qty_remaining > Decimal::ZERO);
+
+        // Final slice takes the lot to exactly zero.
+        charged += lot.consume(lot.qty_remaining);
+
+        assert_eq!(lot.qty_remaining, Decimal::ZERO);
+        assert_eq!(lot.cost_remaining, Decimal::ZERO);
+        assert_eq!(charged, total_cost);
+    }
+
+    #[test]
+    fn lot_consume_clamps_instead_of_panicking() {
+        let mut lot = Lot::new(dec!(1), dec!(100), Utc::now(), 1);
+        assert_eq!(lot.consume(dec!(5)), dec!(100));
+        assert_eq!(lot.qty_remaining, Decimal::ZERO);
+        assert_eq!(lot.consume(dec!(1)), Decimal::ZERO);
     }
 
     #[test]
