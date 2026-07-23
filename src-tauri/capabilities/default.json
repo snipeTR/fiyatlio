@@ -1,0 +1,36 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions granted to the main window and the printable report window.",
+  "windows": ["main", "report"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:window:allow-start-dragging",
+    "core:webview:allow-create-webview-window",
+
+    "opener:default",
+
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+
+    "store:default",
+
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPLOCALDATA/**" }
+      ]
+    }
+  ]
+}

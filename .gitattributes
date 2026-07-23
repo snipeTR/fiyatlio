@@ -1,0 +1,13 @@
+# Normalise every text file to LF in the repository AND in the working copy.
+# The Linux CI job and the Windows CI job must see byte-identical files, or
+# `cargo fmt --check` and snapshot-style assertions can disagree across runners.
+* text=auto eol=lf
+
+# CSV fixtures are compared byte-for-byte by the parser tests — pin them.
+*.csv text eol=lf
+
+# Binary assets: never touch.
+*.png binary
+*.ico binary
+*.icns binary
+*.pdf binary

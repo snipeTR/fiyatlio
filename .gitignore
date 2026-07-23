@@ -1,0 +1,32 @@
+# --- Node / SvelteKit ---
+node_modules/
+/build/
+/.svelte-kit/
+/package/
+.env
+.env.*
+!.env.example
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# --- Rust / Tauri ---
+/src-tauri/target/
+/src-tauri/gen/
+# Cargo.lock IS committed: this is an application, and CI must build the exact
+# same dependency graph that was verified locally.
+
+# Mobile icon sets are not used — this is a Windows desktop app.
+# Desktop icons ARE committed so CI can build without running `tauri icon`.
+/src-tauri/icons/android/
+/src-tauri/icons/ios/
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- User data: never commit real trade history ---
+/data/
+*.local.csv

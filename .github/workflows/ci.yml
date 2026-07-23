@@ -1,0 +1,77 @@
+# .github/workflows/ci.yml
+#
+# Fast gate that runs on every push and pull request: formatting, lint, unit
+# tests and TypeScript checking. Deliberately does NOT run `tauri build` —
+# packaging is expensive on Windows runners (private repos bill Windows minutes
+# at 2x), so it lives in build.yml and only fires on main / tags / manual runs.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fiyatlio has no Rust-side backtrace-dependent tests; keeping this on makes
+  # a CI-only failure readable without a re-run.
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust:
+    name: Rust (fmt · clippy · test)
+    # windows-latest matches the only supported target, so platform-specific
+    # code paths (tauri-runtime-wry) are actually compiled here.
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and target dir
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (warnings are errors)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --all-targets
+
+  frontend:
+    name: Frontend (svelte-check)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: svelte-check (TypeScript strict)
+        run: npm run check
+
+      - name: Build static frontend
+        run: npm run build
