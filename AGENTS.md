@@ -56,6 +56,19 @@ yöntemiyle realized/unrealized P&L hesaplayan, canlı fiyatlarla portföy değe
 
 ---
 
+## 3.1 Sapmalar ve gerekçeleri
+
+Prompt'taki teknoloji seçimlerinden bilinçli olarak ayrıldığımız noktalar:
+
+| Karar | Gerekçe |
+|---|---|
+| **shadcn-svelte CLI kullanılmadı**, `$lib/components/ui/` altındaki bileşenler elle yazıldı | `components.json` hazır duruyor, istenirse `npx shadcn-svelte add …` ile bileşen çekilebilir. Ama uygulamanın ihtiyacı olan yüzey (Card, Button, StatCard, Field, Icon) beş küçük dosya; CLI'ın interaktif init adımına ve registry sürüm bağımlılığına build'i bağlamamak için elle yazıldı. Tema token'ları shadcn ile birebir aynı, sonradan geçiş sorunsuz. |
+| **`svelte-i18n` yerine elle yazılmış rune tabanlı i18n** | İki locale, lazy loading yok, pluralization kuralı yok. Kütüphane karşılığında Svelte 5'in senkron rune modeliyle çatışan bir async init dansı gelirdi. `en.ts`, `tr.ts`'in anahtar kümesiyle tiplendiği için eksik anahtar **compile hatası**. |
+| **İkon paketi yok**, `Icon.svelte` içinde inline SVG path'leri | ~15 glif için bir paket bağımlılığı ve tree-shaking takibi gereksiz. |
+| **Virtualization elle yazıldı** (`routes/trades`) | Satır yüksekliği sabit; problem diziyi scroll offset'e göre dilimlemeye indirgeniyor. Ölçüm makinesi olan bir kütüphane gereksiz. |
+| **Rapor/export yazımı Rust `std::fs` ile**, `tauri-plugin-fs` ile değil | Yol zaten native save dialog'undan geliyor; plugin scope'u frontend fs API'si için anlamlı. Plugin yine de kayıtlı ve capability'de tanımlı. |
+| **`get_trades` ayrı command**, `AnalysisResult` içinde değil | Büyük geçmiş on binlerce satır. Fiyat yenilemesi trade'leri değiştirmediği için her refresh'te IPC'den geçirmek refresh maliyetini domine ederdi. |
+
 ## 4. Klasör düzeni
 
 ```
@@ -67,9 +80,18 @@ fiyatlio/
 ├── src/                           # SvelteKit frontend
 │   ├── app.html · app.css · app.d.ts
 │   ├── lib/
-│   │   ├── components/            # shadcn-svelte + kendi bileşenlerimiz
-│   │   ├── stores/                # Svelte 5 rune tabanlı state
-│   │   ├── i18n/                  # tr.json · en.json
+│   │   ├── components/
+│   │   │   ├── ui/                # Card · Button · StatCard · Field · Icon
+│   │   │   ├── Chart.svelte       # ECharts sarmalayıcı (+ rapor için snapshot)
+│   │   │   ├── FileDrop.svelte    # native dosya seçici + Tauri drag&drop
+│   │   │   ├── PriceStatus.svelte # canlı / stale / hiç göstergesi
+│   │   │   ├── Sidebar.svelte
+│   │   │   └── Toasts.svelte
+│   │   ├── charts/registry.ts     # mount'lu grafiklerin PNG snapshot kaydı
+│   │   ├── stores/app.svelte.ts   # rune tabanlı tek state kaynağı
+│   │   ├── i18n/                  # index.ts · tr.ts · en.ts
+│   │   ├── api.ts                 # invoke sarmalayıcıları + hata normalizasyonu
+│   │   ├── format.ts              # locale'e duyarlı gösterim (sadece gösterim!)
 │   │   ├── types.ts               # Rust modellerinin TS aynası
 │   │   └── utils.ts
 │   └── routes/                    # /  /portfolio  /trades  /charts  /reports  /settings
@@ -84,14 +106,36 @@ fiyatlio/
         ├── lib.rs                 # modül ağacı + Tauri builder
         ├── error.rs               # AppError (thiserror)
         ├── models.rs              # Trade, Lot, Position, RealizedEvent, Settings…
-        ├── parser.rs              # CSV → Trade (Faz 1)
-        ├── binance.rs             # public price API + cache (Faz 2)
-        ├── commands.rs            # #[tauri::command] katmanı (Faz 2)
-        └── engine/
-            ├── mod.rs             # PnlEngine trait + ortak tipler
-            ├── fifo.rs            # FIFO motoru (varsayılan)
-            └── avg_cost.rs        # Average Cost motoru
+        ├── parser.rs              # CSV → Trade
+        ├── engine/
+        │   ├── mod.rs             # PnlEngine trait + fee kuralları
+        │   ├── fifo.rs            # FIFO motoru (varsayılan)
+        │   └── avg_cost.rs        # Average Cost motoru
+        ├── analysis.rs            # engine çıktısı + fiyat → AnalysisResult
+        ├── binance.rs             # public price API (retry, sembol ayıklama)
+        ├── state.rs               # AppState + store kalıcılığı
+        ├── export.rs              # CSV / JSON dışa aktarım
+        ├── report.rs              # self-contained HTML rapor
+        └── commands.rs            # #[tauri::command] katmanı
 ```
+
+### 4.1 Command yüzeyi
+
+| Command | Döner | Not |
+|---|---|---|
+| `app_version` | `String` | |
+| `get_settings` / `set_settings` | `Settings` / `AnalysisResult` | set, diske yazar **ve** yeniden hesaplar |
+| `get_analysis` | `AnalysisResult` | açılışta UI'ı doldurur |
+| `get_trades` | `Vec<Trade>` | ayrı tutuluyor — bkz. §3.1 |
+| `import_csv_files` | `AnalysisResult` | fiyat çekmez; ardından `refresh_prices` çağrılır |
+| `clear_data` | `AnalysisResult` | |
+| `refresh_prices` | `AnalysisResult` | **async**; ağ hatasında cache'e düşer, hata döndürmez |
+| `suggested_export_filename` / `export_data` | `String` | |
+| `suggested_report_filename` / `generate_report` | `String` | |
+
+Mutasyon yapan her command tam `AnalysisResult` döner. Delta döndürmek, UI'ın önbelleklediği
+rakamların backend'in defteriyle ayrışması sınıfından hataları davet ederdi; tam sonuç dönmek
+bu sınıfı tümüyle ortadan kaldırıyor ve hesaplama zaten milisaniyenin altında.
 
 ---
 
@@ -139,6 +183,20 @@ aynı saniyedeki her BUY ayrı lot.
 `(timestamp, pair, side, price, qty, quote_amount, fee)` birebir aynı satırlar duplicate sayılır →
 varsayılan: tekilleştir + "N mükerrer satır atlandı" uyarısı. Ayarlardan kapatılabilir.
 
+**Tekilleştirme yalnızca DOSYALAR ARASINDA yapılır.** Bu bir detay değil: tek bir Binance export'u
+aynı fill'i iki kez listelemez, dolayısıyla *aynı dosya içindeki* birebir aynı satırlar gerçek
+ayrı fill'lerdir — algoritmik olarak parçalanmış bir emir, aynı saniyeye damgalanmış on iki adet
+özdeş `0.0016ETH` alımı üretir. Gerçek bir kullanıcı export'unda bunları birleştirmek **893 satırın
+180'ini** siliyordu. Dosyalar arasında ise aynı satırlar export'ların örtüştüğü anlamına gelir;
+her grup için **en çok kopya bildiren dosya** tam olarak korunur, diğerlerininki atılır.
+
+### 6.2.1 Oversell'in görünürlüğü
+`DashboardSummary` oversell'i yalnız bayrakla geçmez; `oversell_event_count`, `oversell_pnl_usdt`
+ve `oversell_qty_by_asset` alanlarıyla **niceliksel** olarak raporlar. Sebep: Convert/transfer/
+Earn ile gelen bakiyelerin satışı, sıfır maliyet politikasıyla manşet rakamı görünür bir sebep
+olmadan şişirebilir. Kullanıcının "bu kâr nereden geliyor?" sorusunu ekranda cevaplayabilmesi için
+bu rakamlar hesaplanır ve uyarı bandında gösterilir.
+
 ### 6.3 FIFO
 Pair başına `VecDeque<Lot>`. BUY → push_back. SELL → front'tan eşleştir; kısmi tüketimde maliyet
 **oransal** bölünür, tam tüketimde lot pop edilir. Her SELL bir `RealizedEvent` üretir ve
@@ -174,6 +232,20 @@ Pair başına tek havuz (`total_qty`, `total_cost`). SELL'de maliyet = `total_co
 ### 6.7 USDT dışı quote
 P&L **daima kendi quote varlığında** hesaplanır. Dashboard toplamı için quote'un güncel USDT fiyatıyla
 çevrilir; çevrilemeyenler toplamın **dışında** bırakılır ve "USDT'ye çevrilemedi" notuyla listelenir.
+
+**Çevrim yönü kritiktir.** Binance bazı fiat'ları USDT'yi *baz* alarak listeler: parite `USDTTRY`'dir,
+`TRYUSDT` diye bir sembol yoktur. `<varlık>USDT` biçimini varsaymak, o para biriminde tutulan tüm
+pozisyonları sessizce toplamların dışına atar. `binance::USDT_BASE_FIAT` listesindeki varlıklar için
+ters sembol kullanılır ve oran `1 / fiyat` olarak alınır. Liste açıkça tutulur, çünkü var olmayan bir
+sembol istemek batch endpoint'ten 400 döndürür ve her yenilemede yavaş tek-tek fallback'i tetikler.
+
+Emekliye ayrılmış USD sabit paraları (`binance::USD_PEGGED_FALLBACK`, şu an yalnızca `BUSD`) canlı
+piyasası kalmadığı için 1.0 kuruyla değerlenir — bu uydurulmuş bir fiyat değil, ömrü boyunca 1:1
+geçerli olmuş bir sabitlemenin ifadesidir. **Yalnızca** canlı bir piyasa cevap vermediğinde uygulanır.
+
+> **Bilinen sınır:** Realized P&L'in USDT'ye çevrimi **bugünkü** kurla yapılır. 2021'de kazanılmış
+> bir TRY kârı bugünkü USDT/TRY ile çevrildiğinde tarihsel gerçeği yansıtmaz. Doğrusu, işlem anındaki
+> kuru (`/api/v3/klines`) kullanmaktır; v1'de yapılmıyor.
 
 ### 6.8 Unrealized P&L
 `kalan_miktar × güncel_fiyat − kalan_lot_maliyeti`. Fiyat çekilemezse önbellekteki son fiyat kullanılır

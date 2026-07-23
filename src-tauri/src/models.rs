@@ -575,6 +575,24 @@ pub struct ImportSummary {
     pub errors: Vec<RowError>,
 }
 
+impl ImportSummary {
+    /// The "nothing loaded yet" summary, so the frontend can render its empty
+    /// state from the same shape it uses for real data.
+    pub fn empty() -> Self {
+        Self {
+            files: Vec::new(),
+            total_rows: 0,
+            valid_rows: 0,
+            invalid_rows: 0,
+            duplicate_rows: 0,
+            first_trade_at: None,
+            last_trade_at: None,
+            pairs: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Prices
 // ---------------------------------------------------------------------------
@@ -767,6 +785,25 @@ pub struct DashboardSummary {
     pub excluded_pairs: Vec<String>,
 
     pub has_oversell: bool,
+
+    /// How many disposals exceeded tracked inventory.
+    pub oversell_event_count: usize,
+
+    /// Realized P&L contributed by those disposals, in USDT.
+    ///
+    /// This exists because the zero-cost-basis policy can dominate the headline
+    /// number without any visible cause: a history whose deposits arrived via
+    /// convert, transfer or staking looks spectacularly profitable when the
+    /// disposals it *can* see have no acquisition behind them. Surfacing the
+    /// figure lets the user see at a glance how much of the profit is an
+    /// artifact of missing data rather than trading.
+    #[serde(with = "rust_decimal::serde::str")]
+    pub oversell_pnl_usdt: Decimal,
+
+    /// Base quantity sold with no tracked acquisition, per asset. Names exactly
+    /// which coins are missing history.
+    pub oversell_qty_by_asset: BTreeMap<String, Decimal>,
+
     pub price_snapshot: Option<PriceSnapshot>,
 }
 

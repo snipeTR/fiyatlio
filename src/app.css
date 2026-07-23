@@ -107,6 +107,28 @@
 		@apply border-border outline-ring/50;
 	}
 
+	/* Native controls are drawn by the engine, not by our CSS — a <select>'s
+	   dropdown popup, the date picker panel and the scrollbars all come from
+	   Chromium's own widget code. Without `color-scheme` that code assumes a
+	   light page and paints a white popup, while the option text inherits the
+	   dark theme's light foreground: white on white, unreadable.
+	   Declaring the scheme is what makes the engine paint them to match. */
+	:root {
+		color-scheme: light;
+	}
+
+	.dark {
+		color-scheme: dark;
+	}
+
+	/* Belt and braces: some Windows/WebView2 builds still paint the popup from
+	   the option's own colours, so set them explicitly too. */
+	select option,
+	select optgroup {
+		background-color: var(--popover);
+		color: var(--popover-foreground);
+	}
+
 	body {
 		@apply bg-background text-foreground;
 		/* Desktop app, not a web page: no rubber-band scroll, no text selection

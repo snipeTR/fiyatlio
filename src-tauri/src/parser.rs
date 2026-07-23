@@ -14,7 +14,8 @@
 //
 // A header mismatch, by contrast, rejects the whole file (`AppError::CsvHeader`).
 
-use std::collections::HashSet;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
 use std::path::Path;
 
@@ -23,7 +24,7 @@ use rust_decimal::Decimal;
 
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    AmountWithAsset, FileImportStats, ImportSummary, RawTradeRow, RowError, Side, Trade,
+    AmountWithAsset, DedupKey, FileImportStats, ImportSummary, RawTradeRow, RowError, Side, Trade,
     EXPECTED_CSV_HEADER, QUOTE_ASSETS,
 };
 
@@ -435,10 +436,18 @@ pub fn parse_reader<R: Read>(
 /// preserves the original CSV order for partial fills that share a second, which
 /// FIFO depends on (AGENTS.md §6.1).
 ///
-/// When `deduplicate` is set, rows that are byte-identical across all of
-/// `DedupKey`'s fields are collapsed to their first occurrence in sorted order.
-/// Genuine same-second partial fills survive this because they differ in
-/// quantity; only overlapping exports of the same fill collide.
+/// Deduplication, when enabled, is **strictly cross-file**.
+///
+/// This is not a detail. A single Binance export never lists the same fill
+/// twice, so byte-identical rows *within one file* are genuine separate fills —
+/// an algorithmic order split into equal slices produces runs like twelve
+/// identical `0.0016ETH` buys stamped to the same second. Collapsing those would
+/// silently delete real trades and understate the position.
+///
+/// Across files the same rows mean the exports overlap. For each identical-row
+/// group the file that reported the most occurrences is kept in full and the
+/// other files' copies are dropped, which is correct whether the overlap is
+/// partial or total.
 pub fn merge(files: Vec<ParsedFile>, deduplicate: bool) -> (Vec<Trade>, ImportSummary) {
     let mut stats: Vec<FileImportStats> = Vec::with_capacity(files.len());
     let mut errors: Vec<RowError> = Vec::new();
@@ -453,19 +462,55 @@ pub fn merge(files: Vec<ParsedFile>, deduplicate: bool) -> (Vec<Trade>, ImportSu
     trades.sort_by_key(|trade| trade.sort_key());
 
     let mut duplicate_rows = 0usize;
-    if deduplicate {
-        let mut seen: HashSet<_> = HashSet::with_capacity(trades.len());
-        let mut kept = Vec::with_capacity(trades.len());
+    if deduplicate && stats.len() > 1 {
+        // Group every identical row by which file it came from.
+        let mut groups: HashMap<DedupKey, BTreeMap<usize, Vec<usize>>> = HashMap::new();
+        for (position, trade) in trades.iter().enumerate() {
+            groups
+                .entry(trade.dedup_key())
+                .or_default()
+                .entry(trade.file_index)
+                .or_default()
+                .push(position);
+        }
 
-        for trade in trades {
-            if seen.insert(trade.dedup_key()) {
-                kept.push(trade);
-            } else {
+        let mut discard = vec![false; trades.len()];
+        for per_file in groups.into_values() {
+            // Present in only one file: every occurrence is a real fill.
+            if per_file.len() < 2 {
+                continue;
+            }
+
+            // Keep whichever file listed the most copies — a partial export
+            // must not truncate a fuller one. Ties go to the file the user
+            // selected first.
+            let keep = per_file
+                .iter()
+                .map(|(file_index, positions)| (positions.len(), Reverse(*file_index)))
+                .max()
+                .map(|(_, Reverse(file_index))| file_index)
+                .unwrap_or(0);
+
+            for (file_index, positions) in &per_file {
+                if *file_index == keep {
+                    continue;
+                }
+                for position in positions {
+                    discard[*position] = true;
+                }
+            }
+        }
+
+        let mut kept = Vec::with_capacity(trades.len());
+        for (position, trade) in trades.into_iter().enumerate() {
+            if discard[position] {
                 if let Some(entry) = stats.get_mut(trade.file_index) {
                     entry.duplicate_rows += 1;
                     entry.valid_rows = entry.valid_rows.saturating_sub(1);
                 }
                 duplicate_rows += 1;
+            } else {
+                kept.push(trade);
             }
         }
         trades = kept;
@@ -691,6 +736,58 @@ mod tests {
         let (trades, summary) = merge(vec![first, second], false);
         assert_eq!(trades.len(), 2);
         assert_eq!(summary.duplicate_rows, 0);
+    }
+
+    #[test]
+    fn identical_rows_within_one_file_are_real_fills_not_duplicates() {
+        // An algorithmic order split into equal slices produces runs of
+        // byte-identical rows stamped to the same second. A single Binance
+        // export never lists one fill twice, so collapsing these would delete
+        // real trades — observed on a live export where it would have dropped
+        // 180 of 893 rows.
+        let row = "2025-11-14 10:22:22,ETHUSDT,BUY,3213.09,0.0016ETH,5.140944USDT,0.0000016ETH\n";
+        let csv = format!(
+            "Time,Pair,Side,Price,Executed,Amount,Fee\n{}",
+            row.repeat(12)
+        );
+
+        let (trades, summary) = merge(vec![parse(&csv)], true);
+
+        assert_eq!(
+            trades.len(),
+            12,
+            "identical same-file fills must all survive"
+        );
+        assert_eq!(summary.duplicate_rows, 0);
+        assert_eq!(summary.valid_rows, 12);
+    }
+
+    #[test]
+    fn cross_file_overlap_keeps_the_fuller_file() {
+        // File A saw the order as 3 slices; file B's export caught only 2 of
+        // them. Keeping the richer file avoids truncating a real fill.
+        let row = "2025-11-14 10:22:22,ETHUSDT,BUY,3213.09,0.0016ETH,5.140944USDT,0.0000016ETH\n";
+        let header = "Time,Pair,Side,Price,Executed,Amount,Fee\n";
+
+        let thin = parse_bytes(
+            format!("{header}{}", row.repeat(2)).as_bytes(),
+            "thin.csv",
+            0,
+        )
+        .expect("valid");
+        let full = parse_bytes(
+            format!("{header}{}", row.repeat(3)).as_bytes(),
+            "full.csv",
+            1,
+        )
+        .expect("valid");
+
+        let (trades, summary) = merge(vec![thin, full], true);
+
+        assert_eq!(trades.len(), 3);
+        assert_eq!(summary.duplicate_rows, 2);
+        // The survivors all came from the file that reported the most copies.
+        assert!(trades.iter().all(|trade| trade.file_index == 1));
     }
 
     #[test]

@@ -18,6 +18,22 @@ Ajan talimatlarının tamamı: **[AGENTS.md](AGENTS.md)**
 
 ---
 
+## Neler var
+
+- **İki maliyet yöntemi:** FIFO (varsayılan) ve Ortalama Maliyet. Ayarlardan geçiş tüm rakamları
+  anında yeniden hesaplar. Her satış için hangi lottan ne kadar eşleştiği saklanır — rakam denetlenebilir.
+- **Gerçekleşen / gerçekleşmemiş K/Z**, portföy değeri, kazanç oranı, komisyon dökümü.
+- **Dört grafik** (ECharts): işlem zaman çizelgesi (zoom'lu scatter), kümülatif K/Z (step-line),
+  parite bazında K/Z, portföy dağılımı. Tema ile senkron.
+- **On binlerce satır** için sanallaştırılmış işlem tablosu; parite / yön / tarih aralığı / serbest
+  metin filtreleri.
+- **Offline-first:** internet yokken son bilinen fiyatlarla, "canlı değil" göstergesiyle çalışır.
+- **Self-contained HTML rapor** + sistem yazdırma akışıyla PDF; trades ve realized event'ler için
+  CSV/JSON export.
+- **TR / EN** tam çeviri, koyu/açık/sistem teması.
+
+---
+
 ## Kurulum
 
 ### 1. Ön koşullar (Windows)
@@ -88,6 +104,25 @@ npm run tauri build
 
 Çıktılar: `src-tauri/target/release/bundle/nsis/*.exe` ve `.../msi/*.msi`
 
+### Build sorunları ve çözümleri
+
+| Belirti | Sebep | Çözüm |
+|---|---|---|
+| `` `icons/icon.ico` not found; required for generating a Windows Resource file `` | İkonlar üretilmemiş | `npm run tauri icon app-icon.png`. İkonlar depoya commit'li olduğu için normalde bu adım gerekmez; yalnızca `src-tauri/icons/` silinmişse çıkar. |
+| `link.exe not found` / `error: linker 'link.exe' not found` | MSVC build tools yok | `winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` |
+| Uygulama açılıyor ama pencere bembeyaz | WebView2 Runtime yok | [WebView2 Evergreen](https://developer.microsoft.com/microsoft-edge/webview2/) kurun. Bundle `downloadBootstrapper` modunda olduğu için kurulum sırasında otomatik de inebilir. |
+| `The system cannot find the path specified` (derleme sırasında, derin `target/` yollarında) | Windows 260 karakter yol limiti | `git config --system core.longpaths true` **ve** `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1`. Alternatif: projeyi `C:\src\fiyatlio` gibi kısa bir yola taşıyın. |
+| `failed to run custom build command for tauri` | `tauri.conf.json` ile `frontendDist` uyuşmuyor | Önce `npm run build` çalıştırıp `build/` klasörünün oluştuğunu doğrulayın. |
+| NSIS installer Türkçe/İngilizce dil seçmiyor | — | `tauri.conf.json` → `bundle.windows.nsis.languages` dizisinde tanımlı; ek dil eklenebilir. |
+| Antivirüs `target\debug\deps\*.exe` dosyasını siliyor, `cargo test` exit 101 veriyor | **Yanlış pozitif.** Kaspersky'de `VHO:` ön eki sezgisel tespit demektir (imza eşleşmesi değil). Yeni derlenmiş, imzasız, sıkıştırılmış bir .exe'nin `deps` altında saniyeler içinde belirmesi bu heuristiğe takılıyor. | `src-tauri\target` klasörünü antivirüs dışlamalarına ekleyin. Bu klasörde yalnızca derleme çıktıları bulunur. |
+
+### Kod imzalama
+
+Kod imzalama yapılandırılmadığı için hem Windows SmartScreen ilk çalıştırmada uyarı gösterir hem de
+bazı antivirüsler derleme çıktılarını sezgisel olarak işaretler. İmzalamak için `tauri.conf.json` →
+`bundle.windows.certificateThumbprint` alanı kullanılır.
+
+
 ## CI / otomatik derleme
 
 | Workflow | Tetikleyici | Yaptığı iş |
@@ -119,6 +154,9 @@ Time,Pair,Side,Price,Executed,Amount,Fee
 Zaman damgaları **UTC** kabul edilir, arayüzde yerel saate çevrilir.
 Bozuk satırlar import'u durdurmaz; atlanır ve satır numarasıyla listelenir.
 
+Denemek için: [`samples/sample-trades.csv`](samples/sample-trades.csv) — 5 parite, aynı saniyede
+parçalı fill, base varlıkta ödenen komisyon ve USDT dışı quote (`ETHBTC`) örnekleri içerir.
+
 ## Bilinen sınırlar (v1)
 
 - **BNB ile ödenen komisyonlar maliyet tabanına katılmaz.** Trade anındaki tarihsel BNB
@@ -129,6 +167,13 @@ Bozuk satırlar import'u durdurmaz; atlanır ve satır numarasıyla listelenir.
   değiştirilebilir).
 - USDT dışı quote'lu paritelerde P&L kendi quote varlığında hesaplanır; USDT'ye çevrilemeyen
   pariteler dashboard toplamına dahil edilmez ve ayrıca listelenir.
+- **Realized P&L'in USDT'ye çevrimi bugünkü kurla yapılır.** 2021'de kazanılmış bir TRY kârı,
+  bugünkü USDT/TRY kuruyla çevrildiğinde tarihsel gerçeği yansıtmaz. Doğrusu işlem anındaki kuru
+  kullanmaktır (`/api/v3/klines`); v1'de yapılmıyor. Tek quote varlığı USDT olan hesaplarda bu sorun
+  hiç ortaya çıkmaz.
+- Export'un dosya adındaki saat dilimi (ör. `UTC+3`) okunmaz; zaman damgaları **UTC** kabul edilir.
+  Hesaplamayı etkilemez (sıralama korunur), yalnızca gösterilen saatleri ve tarih filtrelerinin
+  sınırlarını kaydırır.
 
 ## Lisans
 
