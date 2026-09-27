@@ -7,6 +7,12 @@ Bir sürüm yayınlamak için bu üç dosyadaki numarayı yükseltin, aşağıya
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-27
+
+### Düzeltilen
+
+- CI ve Windows derlemesi clippy uyarıları ile bozuk `package-lock.json` yüzünden kırılıyordu. `v0.3.0` etiketi kurulum dosyası yayınlayamadı; bu yama aynı içeriği derlenebilir halde yayınlar.
+
 ## [0.3.0] - 2026-09-27
 
 ### Eklenen

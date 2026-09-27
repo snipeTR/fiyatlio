@@ -11,6 +11,9 @@ use std::collections::HashMap;
 
 use crate::models::RawTradeRow;
 
+type SheetRow = (usize, HashMap<String, String>);
+type Groups = Vec<(String, Vec<SheetRow>)>;
+
 #[derive(Clone, Copy)]
 pub struct CsvFormat {
     pub id: &'static str,
@@ -574,22 +577,45 @@ fn fill_row(format: &CsvFormat, cells: &HashMap<String, String>) -> RowOutcome {
             total,
             fee,
             fee_asset,
-        } => split_row(cells, time, pair, side, price, qty, total, fee, fee_asset),
+        } => split_row(
+            cells,
+            SplitCols {
+                time,
+                pair,
+                side,
+                price,
+                qty,
+                total,
+                fee,
+                fee_asset,
+            },
+        ),
         _ => RowOutcome::Skip,
     }
 }
 
-fn split_row(
-    cells: &HashMap<String, String>,
-    time: &str,
-    pair: &str,
-    side: &str,
-    price: &str,
-    qty: &str,
-    total: Option<&str>,
-    fee: &str,
-    fee_asset: Option<&str>,
-) -> RowOutcome {
+struct SplitCols<'a> {
+    time: &'a str,
+    pair: &'a str,
+    side: &'a str,
+    price: &'a str,
+    qty: &'a str,
+    total: Option<&'a str>,
+    fee: &'a str,
+    fee_asset: Option<&'a str>,
+}
+
+fn split_row(cells: &HashMap<String, String>, cols: SplitCols<'_>) -> RowOutcome {
+    let SplitCols {
+        time,
+        pair,
+        side,
+        price,
+        qty,
+        total,
+        fee,
+        fee_asset,
+    } = cols;
     let mut pair = normalize_pair(cell(cells, pair));
     if split_known_pair(&pair).is_none() {
         if let Some(name) = fee_asset {
@@ -647,8 +673,8 @@ fn split_row(
     })
 }
 
-fn binance_statement(rows: &[(usize, HashMap<String, String>)]) -> Vec<(usize, RowOutcome)> {
-    let mut groups: Vec<(String, Vec<(usize, HashMap<String, String>)>)> = Vec::new();
+fn binance_statement(rows: &[SheetRow]) -> Vec<(usize, RowOutcome)> {
+    let mut groups: Groups = Vec::new();
     for (index, cells) in rows {
         let time = cell(cells, "UTC_Time").to_string();
         if let Some(group) = groups.iter_mut().find(|(stamp, _)| stamp == &time) {
@@ -684,7 +710,7 @@ fn binance_statement(rows: &[(usize, HashMap<String, String>)]) -> Vec<(usize, R
     out
 }
 
-fn statement_group(group: &[(usize, HashMap<String, String>)]) -> Option<RawTradeRow> {
+fn statement_group(group: &[SheetRow]) -> Option<RawTradeRow> {
     let mut received: Option<(String, String)> = None;
     let mut spent: Option<(String, String)> = None;
     let mut fee: Option<(String, String)> = None;
@@ -728,8 +754,8 @@ fn statement_group(group: &[(usize, HashMap<String, String>)]) -> Option<RawTrad
     })
 }
 
-fn kraken_ledgers(rows: &[(usize, HashMap<String, String>)]) -> Vec<(usize, RowOutcome)> {
-    let mut groups: Vec<(String, Vec<(usize, HashMap<String, String>)>)> = Vec::new();
+fn kraken_ledgers(rows: &[SheetRow]) -> Vec<(usize, RowOutcome)> {
+    let mut groups: Groups = Vec::new();
     for (index, cells) in rows {
         let key = cell(cells, "refid").to_string();
         if let Some(group) = groups.iter_mut().find(|(id, _)| id == &key) {
@@ -763,7 +789,7 @@ fn kraken_ledgers(rows: &[(usize, HashMap<String, String>)]) -> Vec<(usize, RowO
     out
 }
 
-fn kraken_trade(group: &[(usize, HashMap<String, String>)]) -> Option<RawTradeRow> {
+fn kraken_trade(group: &[SheetRow]) -> Option<RawTradeRow> {
     let mut legs: Vec<(String, String, String)> = Vec::new();
     for (_, cells) in group {
         let asset = kraken_asset(cell(cells, "asset"));
@@ -787,11 +813,7 @@ fn kraken_trade(group: &[(usize, HashMap<String, String>)]) -> Option<RawTradeRo
         (Some(spent), Some(recv)) if !recv.is_zero() => (spent / recv).normalize().to_string(),
         _ => return None,
     };
-    let fee_asset = if spent_fee != "0" && !spent_fee.is_empty() {
-        spent_asset.clone()
-    } else {
-        spent_asset.clone()
-    };
+    let fee_asset = spent_asset.clone();
     Some(RawTradeRow {
         time: normalize_time(cell(&group[0].1, "time")),
         pair,
@@ -803,8 +825,8 @@ fn kraken_trade(group: &[(usize, HashMap<String, String>)]) -> Option<RawTradeRo
     })
 }
 
-fn bitget_bills(rows: &[(usize, HashMap<String, String>)]) -> Vec<(usize, RowOutcome)> {
-    let mut groups: Vec<(String, Vec<(usize, HashMap<String, String>)>)> = Vec::new();
+fn bitget_bills(rows: &[SheetRow]) -> Vec<(usize, RowOutcome)> {
+    let mut groups: Groups = Vec::new();
     for (index, cells) in rows {
         let key = cell(cells, "order").to_string();
         if let Some(group) = groups.iter_mut().find(|(id, _)| id == &key) {
@@ -829,7 +851,7 @@ fn bitget_bills(rows: &[(usize, HashMap<String, String>)]) -> Vec<(usize, RowOut
     out
 }
 
-fn bitget_trade(group: &[(usize, HashMap<String, String>)]) -> Option<RawTradeRow> {
+fn bitget_trade(group: &[SheetRow]) -> Option<RawTradeRow> {
     let mut bought: Option<(String, String, String)> = None;
     let mut sold: Option<(String, String, String)> = None;
     for (_, cells) in group {
