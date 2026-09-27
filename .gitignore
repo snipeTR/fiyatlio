@@ -30,3 +30,11 @@ Thumbs.db
 # --- User data: never commit real trade history ---
 /data/
 *.local.csv
+Binance-Spot-Trade-History*.csv
+samples/paxg_gercek.csv
+out/
+out-ornek/
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/

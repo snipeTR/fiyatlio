@@ -349,3 +349,16 @@ cargo fmt
 6. TR/EN geçişi **tüm** metinleri kapsıyor
 7. HTML rapor üretiliyor, PDF kaydetme akışı çalışıyor
 8. `npm run tauri build` Windows'ta kurulabilir paket üretiyor
+
+---
+
+## 13. Python komut satırı
+
+Masaüstü uygulamanın yanında repo kökünde çevrimdışı bir CLI vardır: `fiyatlio/` paketi, `python -m fiyatlio analyze`.
+
+- Para hesabı `decimal.Decimal`. Float32 yok.
+- CLI yorumları, yardım metni ve raporlar **Türkçe**. Bu paket için §2.7'deki İngilizce yorum kuralı geçerli değildir. Tauri / Svelte tarafı İngilizce yorumda kalır.
+- Yöntemler: `fifo` (varsayılan), `lifo`, `avg`.
+- Gerçek işlem CSV'si commitlenmez. `Binance-Spot-Trade-History-*.csv`, `out/` ve kişisel export'lar `.gitignore` altındadır.
+- Yayınlanan örnek `samples/paxg_ornek.csv` kısa bir kesittir. Emir numaraları `100001`–`100006` ile değiştirilmiştir. Testler bu dosyadaki maliyet bandını (±0.001 PAXG / ±1 USDT) korur.
+- CLI testi: repo kökünden `pytest`. Masaüstü testleri `src-tauri` altında `cargo test` olmaya devam eder.

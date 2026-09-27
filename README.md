@@ -16,6 +16,39 @@ realized / unrealized P&L hesaplayan, offline-first masaüstü uygulaması.
 
 Ajan talimatlarının tamamı: **[AGENTS.md](AGENTS.md)**
 
+Aynı depoda masaüstü uygulamanın yanında çevrimdışı bir **Python komut satırı** da var.
+Ağ çağrısı yok. Fiyat verilmezse açık kâr/zarar yazılmaz. Dönemler trader dilinde etiketlenir
+(`ILK_ALIM`, `EK_ALIM`, `KISMI_SATIS`, `SIFIRLAMA`, `YENIDEN_ALIM`, `EK_SATIS`, `FAZLA_SATIS`).
+
+### Komut satırı
+
+Python 3.11+.
+
+```bash
+pip install -r requirements.txt
+python -m fiyatlio analyze islemler.csv --method fifo --out out
+```
+
+Cüzdan ve anlık fiyat isteğe bağlıdır:
+
+```bash
+python -m fiyatlio analyze samples/paxg_ornek.csv --holdings PAXG=0.671466 --price PAXG=4279.78 --method fifo --out out
+```
+
+| Bayrak | Anlamı |
+| --- | --- |
+| `--method fifo` | `lifo` veya `avg`. Varsayılan `fifo` |
+| `--holdings VARLIK=MIKTAR` | Cüzdan override. Örnek: `PAXG=0.671466,ETH=0.2` |
+| `--price VARLIK=FIYAT` | Anlık fiyat. Yoksa açık K/Z hesaplanmaz |
+| `--flat-pct` / `--flat-qty` | Sıfırlama eşiği. Varsayılan `0.005` ve `0.0001` |
+| `--allow-missing-lots` | Eksik satışta hayali lot. Varsayılan: eksi bakiye, hayali lot yok |
+
+Çıktı: `ozet.md`, `donemler.csv`, `filller.csv`, `kalan_lotlar.csv`, `varlik_ozeti.csv`, `rapor.html`, `rapor.xlsx`.
+
+`samples/paxg_ornek.csv` gerçek bir exportun kısa kesitidir. Emir numaraları `100001`–`100006` yapılmıştır. Tam hesap geçmişi bu depoda yoktur. Kesit, bir kapanmış PAXG dönemi ve Mart 2026'daki açık çuvalı içerir. FIFO kalan kabaca 0,1928 PAXG @ 5150,14, 0,3617 @ 5110,80 ve 0,1169 @ 4275,38 olur. Toplam maliyet yaklaşık 3341,19 USDT. Cüzdan 0,671466 ve fiyat 4279,78 ile açık zarar yaklaşık −467 USDT'tir.
+
+Test: `pytest`
+
 ---
 
 ## Neler var
@@ -144,18 +177,26 @@ git tag v0.1.0 && git push origin v0.1.0
 
 ## CSV formatı
 
-Binance → Orders → Spot Order → Trade History → Export
+Binance → Emirler → Spot → İşlem Geçmişi → Dışa Aktar.
+
+Masaüstü uygulaması şu başlığı okur:
 
 ```
 Time,Pair,Side,Price,Executed,Amount,Fee
 2026-07-14 17:09:20,ETHUSDT,BUY,1864.77,0.2681ETH,499.944837USDT,0.0002681ETH
 ```
 
-Zaman damgaları **UTC** kabul edilir, arayüzde yerel saate çevrilir.
-Bozuk satırlar import'u durdurmaz; atlanır ve satır numarasıyla listelenir.
+Komut satırı buna ek olarak güncel exportu da okur: `Order No`, `AOR Conversion Pair`, `AOR Conversion Rate`. Aynı emir numarası birden fazla fill olabilir. `USDCUSDT` gibi stable-stable çiftler çeviridir, PnL motoruna girmez.
 
-Denemek için: [`samples/sample-trades.csv`](samples/sample-trades.csv) — 5 parite, aynı saniyede
-parçalı fill, base varlıkta ödenen komisyon ve USDT dışı quote (`ETHBTC`) örnekleri içerir.
+Zaman damgaları sıralama için olduğu gibi kullanılır. Bozuk satır import'u durdurmaz.
+
+Denemek için:
+
+- [`samples/sample-trades.csv`](samples/sample-trades.csv) — masaüstü uygulamanın çok pariteli küçük örneği
+- [`samples/paxg_ornek.csv`](samples/paxg_ornek.csv) — anonim PAXG kesiti (emir numaraları değiştirildi)
+- [`samples/paxg_referans.csv`](samples/paxg_referans.csv) — aynı açık çuvalın yuvarlak, sentetik hali
+
+Gerçek `Binance-Spot-Trade-History-*.csv` dosyalarını repoya koymayın.
 
 ## Bilinen sınırlar (v1)
 
