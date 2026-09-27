@@ -38,3 +38,4 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .venv/
+release-notes.md

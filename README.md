@@ -161,13 +161,16 @@ bazı antivirüsler derleme çıktılarını sezgisel olarak işaretler. İmzala
 | Workflow | Tetikleyici | Yaptığı iş |
 |---|---|---|
 | [`ci.yml`](.github/workflows/ci.yml) | her push + PR | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` (Windows) + `svelte-check` & frontend build (Linux) |
-| [`build.yml`](.github/workflows/build.yml) | `main`'e push, `v*` tag, manuel | `tauri build` → NSIS `.exe` + `.msi` artifact olarak yüklenir; tag'de ayrıca **draft release** oluşturulur |
+| [`build.yml`](.github/workflows/build.yml) | `main`'e push, `v*` tag, manuel | `tauri build` → NSIS `.exe` + `.msi`. `vX.Y.Z` etiketinde bunlar ve `CHANGELOG.md` ile **yayınlanmış release** açılır |
 
-Sürüm yayınlamak için:
+Sürüm yayınlamak için üç dosyada aynı numarayı yükseltin, `CHANGELOG.md` içine `## [X.Y.Z]` bölümünü yazın, sonra etiketi gönderin:
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.0
+git push origin v0.1.0
 ```
+
+Etiket `v0.1.0` ise `package.json`, `src-tauri/Cargo.toml` ve `src-tauri/tauri.conf.json` da `0.1.0` olmak zorundadır. Değişiklik günlüğünde o sürümün bölümü yoksa veya boşsa yayın durur. `v1.2.0-rc.1` gibi tireli etiketler ön sürüm olarak işaretlenir.
 
 > Windows runner dakikaları private repo'da **2× ücretlendirilir**. Bu yüzden pahalı olan
 > `tauri build` her push'ta değil, yalnızca `main` / tag / manuel tetiklemede çalışır.

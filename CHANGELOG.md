@@ -1,0 +1,20 @@
+# Değişiklik günlüğü
+
+Biçim [Keep a Changelog](https://keepachangelog.com/tr-TR/1.1.0/) tarzındadır.
+Sürüm numarası `package.json`, `src-tauri/Cargo.toml` ve `src-tauri/tauri.conf.json` ile aynıdır.
+
+Bir sürüm yayınlamak için bu üç dosyadaki numarayı yükseltin, aşağıya o sürüme ait bir bölüm ekleyin ve `vX.Y.Z` etiketini gönderin. GitHub Actions Windows kurulumunu derleyip bu dosyayla birlikte release açar.
+
+## [Unreleased]
+
+## [0.1.0] - 2026-09-27
+
+### Eklenen
+
+- Windows masaüstü uygulaması: Binance spot CSV, FIFO ve ortalama maliyet, grafikler, HTML rapor.
+- Çevrimdışı Python komut satırı: `fifo` / `lifo` / `avg`, dönem etiketleri, CSV, HTML ve Excel çıktısı.
+- Anonim PAXG örnek dosyası (`samples/paxg_ornek.csv`). Emir numaraları değiştirilmiştir.
+
+### Bilinen
+
+- Kurulum dosyası imzasızdır. Windows SmartScreen ilk çalıştırmada uyarı gösterebilir.

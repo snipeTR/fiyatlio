@@ -362,3 +362,4 @@ Masaüstü uygulamanın yanında repo kökünde çevrimdışı bir CLI vardır: 
 - Gerçek işlem CSV'si commitlenmez. `Binance-Spot-Trade-History-*.csv`, `out/` ve kişisel export'lar `.gitignore` altındadır.
 - Yayınlanan örnek `samples/paxg_ornek.csv` kısa bir kesittir. Emir numaraları `100001`–`100006` ile değiştirilmiştir. Testler bu dosyadaki maliyet bandını (±0.001 PAXG / ±1 USDT) korur.
 - CLI testi: repo kökünden `pytest`. Masaüstü testleri `src-tauri` altında `cargo test` olmaya devam eder.
+- Windows kurulumu `vX.Y.Z` etiketiyle yayınlanır. Etiket, `package.json` / `Cargo.toml` / `tauri.conf.json` sürümü ve `CHANGELOG.md` bölümüyle aynı olmak zorundadır. Akış `.github/workflows/build.yml` içindedir.
