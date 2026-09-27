@@ -182,14 +182,23 @@ Etiket `v0.1.0` ise `package.json`, `src-tauri/Cargo.toml` ve `src-tauri/tauri.c
 
 Binance → Emirler → Spot → İşlem Geçmişi → Dışa Aktar.
 
-Masaüstü uygulaması şu başlığı okur:
+Masaüstü uygulaması ve komut satırı iki Binance başlığını da okur. Kolon sırası önemli değildir; adlar eşleşir.
+
+Klasik:
 
 ```
 Time,Pair,Side,Price,Executed,Amount,Fee
 2026-07-14 17:09:20,ETHUSDT,BUY,1864.77,0.2681ETH,499.944837USDT,0.0002681ETH
 ```
 
-Komut satırı buna ek olarak güncel exportu da okur: `Order No`, `AOR Conversion Pair`, `AOR Conversion Rate`. Aynı emir numarası birden fazla fill olabilir. `USDCUSDT` gibi stable-stable çiftler çeviridir, PnL motoruna girmez.
+Güncel işlem geçmişi (`Order No` ile başlayan):
+
+```
+Order No,Time,Pair,Side,Price,Executed,Amount,Fee,AOR Conversion Pair,AOR Conversion Rate
+650006707,2026-03-23 11:49:10,PAXGUSDT,BUY,4271.1,0.075PAXG,320.3325USDT,0.000075PAXG,,
+```
+
+`Order No` aynı emrin fill'lerini ayırır. AOR kolonları okunur, maliyete girmez. `USDCUSDT` gibi stable-stable çiftler komut satırında çeviridir, PnL motoruna girmez. Başka bir borsanın exportu, parser'daki format listesine kolon adları eklenerek bağlanır.
 
 Zaman damgaları sıralama için olduğu gibi kullanılır. Bozuk satır import'u durdurmaz.
 

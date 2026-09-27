@@ -165,7 +165,7 @@ export const tr = {
 	'error.file.read': 'Dosya okunamadı.',
 	'error.file.write': 'Dosya yazılamadı. Yazma izniniz olduğundan emin olun.',
 	'error.csv.header':
-		'CSV başlığı beklenen formatta değil. Binance spot işlem geçmişi export’u bekleniyor.',
+		'CSV başlığı tanınmadı. Binance spot exportunun iki biçimi de kabul edilir: Time ile başlayan klasik dosya ve Order No ile başlayan güncel dosya.',
 	'error.csv.malformed': 'CSV dosyası bozuk.',
 	'error.network.unreachable': 'Binance’e ulaşılamadı. Önbellekteki fiyatlar kullanılıyor.',
 	'error.network.status': 'Binance beklenmeyen bir yanıt döndürdü.',

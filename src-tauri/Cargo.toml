@@ -1,6 +1,6 @@
 [package]
 name = "fiyatlio"
-version = "0.1.0"
+version = "0.2.0"
 description = "Binance spot trading analysis desktop application (FIFO / Average Cost P&L)"
 authors = ["Fiyatlio"]
 edition = "2021"

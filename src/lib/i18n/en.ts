@@ -167,7 +167,7 @@ export const en: Record<keyof typeof tr, string> = {
 	'error.file.read': 'The file could not be read.',
 	'error.file.write': 'The file could not be written. Check that you have write permission.',
 	'error.csv.header':
-		'The CSV header is not in the expected format. A Binance spot trade history export is required.',
+		'The CSV header was not recognised. Both Binance spot exports are accepted: the classic file starting with Time, and the current file starting with Order No.',
 	'error.csv.malformed': 'The CSV file is malformed.',
 	'error.network.unreachable': 'Binance is unreachable. Using cached prices.',
 	'error.network.status': 'Binance returned an unexpected response.',

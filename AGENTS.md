@@ -167,8 +167,14 @@ Time,Pair,Side,Price,Executed,Amount,Fee
    BUY'da base varlıkta ödenen fee tüm fill'i yutuyorsa (`fee >= executed`) **feeExceedsQuantity**.
    İkincisi olmasa açılacak lot sıfır miktarlı olur, o satırın maliyeti sahipsiz kalır ve §8(d)
    korunum invariantı kırılırdı.
-9. Header karşılaştırması **büyük/küçük harf duyarsız ama sıra duyarlıdır** (kolonlar kendi birimini
-   taşımadığı için sırası değişmiş bir dosya makul görünen saçmalık üretir). UTF-8 BOM temizlenir.
+9. Başlık, kayıtlı bir borsa formatının kolon kümesiyle eşleşir. Eşleşme **ada** göredir
+   (büyük/küçük harf duyarsız, sıra duyarsız). Bilinmeyen başlık dosyayı reddeder. UTF-8 BOM temizlenir.
+   Bugün iki Binance spot biçimi kayıtlıdır:
+   `Time,Pair,Side,Price,Executed,Amount,Fee` ve
+   `Order No,Time,Pair,Side,Price,Executed,Amount,Fee,AOR Conversion Pair,AOR Conversion Rate`.
+   `Order No` ve AOR kolonları tanınır, maliyete katılmaz; ücret `Fee` sütunundadır.
+   Yeni bir borsa `parser::CSV_FORMATS` listesine bir `CsvFormat` eklenerek bağlanır: dosyanın
+   yazdığı kolon adları ve bunların Time/Pair/Side/Price/Executed/Amount/Fee karşılığı.
 
 ---
 

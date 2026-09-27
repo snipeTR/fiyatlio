@@ -72,8 +72,9 @@ impl Side {
 /// because the numeric columns carry a trailing asset code (`0.2681ETH`) and the
 /// timestamp needs explicit UTC interpretation.
 ///
-/// Expected header (exact, case-sensitive):
-/// `Time,Pair,Side,Price,Executed,Amount,Fee`
+/// Canonical columns after a file has been matched to a known exchange format.
+/// Binance writes these names directly. Another exchange maps its own headers
+/// onto this shape in `parser` before a row is deserialized.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawTradeRow {
     #[serde(rename = "Time")]
@@ -96,7 +97,8 @@ pub struct RawTradeRow {
     pub fee: String,
 }
 
-/// The exact header Binance emits. `parser` rejects a file whose header differs.
+/// Internal column order used once a file's header has been recognized.
+/// This is not the only header a file may have; see `parser::CSV_FORMATS`.
 pub const EXPECTED_CSV_HEADER: [&str; 7] =
     ["Time", "Pair", "Side", "Price", "Executed", "Amount", "Fee"];
 

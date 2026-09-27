@@ -1,6 +1,11 @@
 // src-tauri/src/parser.rs
 //
-// CSV ingestion: raw Binance export rows -> validated `Trade` values.
+// CSV ingestion: a known exchange export -> validated `Trade` values.
+//
+// Two Binance spot layouts are registered today. A further exchange is another
+// `CsvFormat`: the set of header labels it writes, and which of those labels
+// fill Time / Pair / Side / Price / Executed / Amount / Fee. Matching is by
+// column name, not by column position.
 //
 // Contract (AGENTS.md §5):
 //   1. `Time` is `%Y-%m-%d %H:%M:%S`, interpreted as UTC.
@@ -30,6 +35,107 @@ use crate::models::{
 
 /// Timestamp layout used by every Binance spot trade-history export.
 pub const CSV_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
+/// One exchange export layout. `columns` is the whole header the file must
+/// contain (order does not matter). The seven field labels name which of those
+/// columns feed the engine.
+struct CsvFormat {
+    columns: &'static [&'static str],
+    time: &'static str,
+    pair: &'static str,
+    side: &'static str,
+    price: &'static str,
+    executed: &'static str,
+    amount: &'static str,
+    fee: &'static str,
+}
+
+const BINANCE_LEGACY_COLUMNS: &[&str] =
+    &["Time", "Pair", "Side", "Price", "Executed", "Amount", "Fee"];
+
+/// Current Binance "Trade History" export. `Order No` groups fills; the AOR
+/// columns are read and ignored — fee accounting uses the `Fee` column.
+const BINANCE_ORDER_COLUMNS: &[&str] = &[
+    "Order No",
+    "Time",
+    "Pair",
+    "Side",
+    "Price",
+    "Executed",
+    "Amount",
+    "Fee",
+    "AOR Conversion Pair",
+    "AOR Conversion Rate",
+];
+
+/// Registered layouts. Add an exchange by appending one entry.
+const CSV_FORMATS: &[CsvFormat] = &[
+    CsvFormat {
+        columns: BINANCE_LEGACY_COLUMNS,
+        time: "Time",
+        pair: "Pair",
+        side: "Side",
+        price: "Price",
+        executed: "Executed",
+        amount: "Amount",
+        fee: "Fee",
+    },
+    CsvFormat {
+        columns: BINANCE_ORDER_COLUMNS,
+        time: "Time",
+        pair: "Pair",
+        side: "Side",
+        price: "Price",
+        executed: "Executed",
+        amount: "Amount",
+        fee: "Fee",
+    },
+];
+
+fn header_key(name: &str) -> String {
+    name.trim().to_ascii_lowercase()
+}
+
+fn formats_label() -> String {
+    CSV_FORMATS
+        .iter()
+        .map(|format| format.columns.join(","))
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+/// Returns the format whose column set equals `found`, ignoring order and case.
+fn match_format(found: &[String]) -> Option<&'static CsvFormat> {
+    let mut keys: Vec<String> = found.iter().map(|name| header_key(name)).collect();
+    keys.sort();
+    keys.dedup();
+    if keys.len() != found.len() {
+        return None;
+    }
+    CSV_FORMATS.iter().find(|format| {
+        let mut expected: Vec<String> =
+            format.columns.iter().map(|name| header_key(name)).collect();
+        expected.sort();
+        expected == keys
+    })
+}
+
+fn field_indexes(found: &[String], format: &CsvFormat) -> Option<[usize; 7]> {
+    let mut index = HashMap::new();
+    for (position, name) in found.iter().enumerate() {
+        index.insert(header_key(name), position);
+    }
+    let at = |label: &str| index.get(&header_key(label)).copied();
+    Some([
+        at(format.time)?,
+        at(format.pair)?,
+        at(format.side)?,
+        at(format.price)?,
+        at(format.executed)?,
+        at(format.amount)?,
+        at(format.fee)?,
+    ])
+}
 
 // ---------------------------------------------------------------------------
 // Scalar parsing
@@ -328,27 +434,26 @@ pub fn parse_reader<R: Read>(
         })?
         .clone();
 
-    // Header names are compared case-insensitively but order-sensitively: the
-    // columns carry no self-describing units, so a reordered file would parse
-    // into plausible-looking nonsense.
+    // A file matches a registered exchange when its header names are that
+    // format's column set. Position does not matter: each column is named.
+    // `Order No` and the AOR columns are recognized and then left unused.
     let found: Vec<String> = headers.iter().map(|h| h.trim().to_string()).collect();
-    let matches = found.len() == EXPECTED_CSV_HEADER.len()
-        && found
-            .iter()
-            .zip(EXPECTED_CSV_HEADER.iter())
-            .all(|(a, b)| a.eq_ignore_ascii_case(b));
-
-    if !matches {
+    let Some(format) = match_format(&found) else {
         return Err(AppError::CsvHeader {
             path: display_path.to_string(),
-            expected: EXPECTED_CSV_HEADER.join(","),
+            expected: formats_label(),
             found: found.join(","),
         });
-    }
+    };
+    let Some(indexes) = field_indexes(&found, format) else {
+        return Err(AppError::CsvHeader {
+            path: display_path.to_string(),
+            expected: formats_label(),
+            found: found.join(","),
+        });
+    };
 
-    // Deserialization matches `RawTradeRow`'s `#[serde(rename)]` names exactly,
-    // so hand it the canonical spelling rather than whatever casing the file
-    // used. Safe because the check above already proved the columns line up.
+    // `RawTradeRow` always deserializes the seven canonical names, in this order.
     let headers = csv::StringRecord::from(EXPECTED_CSV_HEADER.to_vec());
 
     let mut trades = Vec::new();
@@ -379,8 +484,30 @@ pub fn parse_reader<R: Read>(
         };
 
         let raw_line = record.iter().collect::<Vec<_>>().join(",");
+        let mut canonical = csv::StringRecord::new();
+        let mut missing_field = false;
+        for index in indexes {
+            match record.get(index) {
+                Some(value) => canonical.push_field(value),
+                None => {
+                    errors.push(RowError {
+                        file: display_path.to_string(),
+                        file_index,
+                        row_index,
+                        reason_key: "error.row.malformed".to_string(),
+                        detail: "row is shorter than its header".to_string(),
+                        raw: raw_line.clone(),
+                    });
+                    missing_field = true;
+                    break;
+                }
+            }
+        }
+        if missing_field {
+            continue;
+        }
 
-        let row: RawTradeRow = match record.deserialize(Some(&headers)) {
+        let row: RawTradeRow = match canonical.deserialize(Some(&headers)) {
             Ok(row) => row,
             Err(source) => {
                 errors.push(RowError {
@@ -624,6 +751,28 @@ mod tests {
         let err = parse_bytes(b"Date,Symbol,Side\n", "bad.csv", 0)
             .expect_err("header mismatch must reject the file");
         assert_eq!(err.kind(), "csvHeader");
+    }
+
+    #[test]
+    fn accepts_the_current_binance_export_with_order_no() {
+        let csv = "Order No,Time,Pair,Side,Price,Executed,Amount,Fee,AOR Conversion Pair,AOR Conversion Rate\n\
+                   650006707,2026-03-23 11:49:10,PAXGUSDT,BUY,4271.1,0.075PAXG,320.3325USDT,0.000075PAXG,,\n";
+        let parsed = parse(csv);
+        assert!(parsed.errors.is_empty());
+        assert_eq!(parsed.trades.len(), 1);
+        assert_eq!(parsed.trades[0].pair, "PAXGUSDT");
+        assert_eq!(parsed.trades[0].qty, dec!(0.075));
+        assert_eq!(parsed.trades[0].quote_amount, dec!(320.3325));
+        assert_eq!(parsed.trades[0].fee_asset, "PAXG");
+    }
+
+    #[test]
+    fn column_order_does_not_matter_inside_a_known_format() {
+        let csv = "Fee,Amount,Executed,Price,Side,Pair,Time\n\
+                   0.000075PAXG,320.3325USDT,0.075PAXG,4271.1,BUY,PAXGUSDT,2026-03-23 11:49:10\n";
+        let parsed = parse(csv);
+        assert_eq!(parsed.trades.len(), 1);
+        assert_eq!(parsed.trades[0].qty, dec!(0.075));
     }
 
     #[test]

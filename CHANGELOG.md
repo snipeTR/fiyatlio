@@ -7,6 +7,13 @@ Bir sürüm yayınlamak için bu üç dosyadaki numarayı yükseltin, aşağıya
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
+### Düzeltilen
+
+- Masaüstü uygulaması güncel Binance spot exportunu da okur. `Order No,Time,Pair,Side,Price,Executed,Amount,Fee,AOR Conversion Pair,AOR Conversion Rate` başlığı artık reddedilmez.
+- Eski `Time,Pair,Side,Price,Executed,Amount,Fee` başlığı da duruyor. Kolon sırası önemli değil; eşleşme ada göredir.
+
 ## [0.1.0] - 2026-09-27
 
 ### Eklenen
