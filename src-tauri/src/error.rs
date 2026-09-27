@@ -13,6 +13,14 @@
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 
+/// One of the layouts a file's header matched. `label_key` is an i18n key.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FormatChoice {
+    pub id: String,
+    pub label_key: String,
+}
+
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("file not found: {0}")]
@@ -32,13 +40,19 @@ pub enum AppError {
         source: std::io::Error,
     },
 
-    /// The CSV header is missing or does not match the expected Binance export
-    /// layout. The whole file is rejected — see AGENTS.md §5.
-    #[error("unexpected CSV header in {path}: expected {expected}, found {found}")]
+    /// The CSV header is missing or does not match a registered exchange export.
+    #[error("unexpected CSV header in {path}: expected one of {expected}, found {found}")]
     CsvHeader {
         path: String,
         expected: String,
         found: String,
+    },
+
+    /// More than one registered layout has this header. The user has to choose.
+    #[error("ambiguous CSV format in {path}")]
+    AmbiguousFormat {
+        path: String,
+        options: Vec<FormatChoice>,
     },
 
     /// Structural CSV failure (unterminated quote, ragged record count, …).
@@ -87,6 +101,7 @@ impl AppError {
             AppError::FileRead { .. } => "fileRead",
             AppError::FileWrite { .. } => "fileWrite",
             AppError::CsvHeader { .. } => "csvHeader",
+            AppError::AmbiguousFormat { .. } => "ambiguousFormat",
             AppError::Csv { .. } => "csvMalformed",
             AppError::Network(_) => "network",
             AppError::BinanceStatus { .. } => "binanceStatus",
@@ -107,6 +122,7 @@ impl AppError {
             AppError::FileRead { .. } => "error.file.read",
             AppError::FileWrite { .. } => "error.file.write",
             AppError::CsvHeader { .. } => "error.csv.header",
+            AppError::AmbiguousFormat { .. } => "error.csv.ambiguous",
             AppError::Csv { .. } => "error.csv.malformed",
             AppError::Network(_) => "error.network.unreachable",
             AppError::BinanceStatus { .. } => "error.network.status",
@@ -128,16 +144,26 @@ struct AppErrorPayload<'a> {
     message_key: &'a str,
     /// Technical detail, intentionally untranslated.
     detail: String,
+    /// Set for `ambiguousFormat`: which file to resolve and the choices.
+    path: String,
+    options: Vec<FormatChoice>,
 }
 
 // Tauri requires command errors to be `Serialize`. `thiserror` gives us `Display`;
 // we turn that into the structured payload above.
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (path, options) = match self {
+            AppError::AmbiguousFormat { path, options } => (path.clone(), options.clone()),
+            AppError::CsvHeader { path, .. } => (path.clone(), Vec::new()),
+            _ => (String::new(), Vec::new()),
+        };
         AppErrorPayload {
             kind: self.kind(),
             message_key: self.message_key(),
             detail: self.to_string(),
+            path,
+            options,
         }
         .serialize(serializer)
     }
@@ -167,6 +193,13 @@ mod tests {
                 path: "a".into(),
                 expected: "b".into(),
                 found: "c".into(),
+            },
+            AppError::AmbiguousFormat {
+                path: "a".into(),
+                options: vec![FormatChoice {
+                    id: "binance-spot-time".into(),
+                    label_key: "format.binanceSpotTime".into(),
+                }],
             },
             AppError::Network("x".into()),
             AppError::BinanceStatus {

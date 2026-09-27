@@ -95,13 +95,15 @@ pub fn import_csv_files<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     paths: Vec<String>,
+    format_overrides: Option<std::collections::HashMap<String, String>>,
 ) -> AppResult<AnalysisResult> {
     if paths.is_empty() {
         return Err(AppError::NoData);
     }
 
     let deduplicate = state.with(|data| data.settings.deduplicate)?;
-    let (trades, import) = parser::import_files(&paths, deduplicate)?;
+    let overrides = format_overrides.unwrap_or_default();
+    let (trades, import) = parser::import_files_with(&paths, deduplicate, &overrides)?;
 
     tracing::info!(
         "imported {} trades from {} file(s), {} skipped, {} duplicates",

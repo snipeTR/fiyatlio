@@ -202,10 +202,17 @@ export interface ReportOptions {
  * untranslated technical context and is only shown in the expandable part of an
  * error toast.
  */
+export interface FormatChoice {
+	id: string;
+	labelKey: string;
+}
+
 export interface AppErrorPayload {
 	kind: string;
 	messageKey: string;
 	detail: string;
+	path?: string;
+	options?: FormatChoice[];
 }
 
 export function isAppError(value: unknown): value is AppErrorPayload {

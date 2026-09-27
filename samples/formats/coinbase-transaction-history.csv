@@ -1,0 +1,4 @@
+Timestamp,Transaction Type,Asset,Quantity Transacted,Spot Price Currency,Spot Price at Transaction,Subtotal,Total (inclusive of fees),Fees,Notes
+2024-06-01T09:15:00Z,Buy,ETH,0.10,USD,3500.00,350.00,351.75,1.75,
+2024-06-02T14:40:00Z,Sell,ETH,0.10,USD,3600.00,360.00,358.20,1.80,
+2024-06-03T08:00:00Z,Receive,ETH,0.05,USD,3550.00,177.50,177.50,0.00,örnek transfer

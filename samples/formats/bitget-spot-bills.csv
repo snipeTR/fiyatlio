@@ -1,0 +1,4 @@
+order,Date,Coin,Type,Amount,Fee,Available
+ord-bg-001,2024-06-01 09:15:00,ETH,Buy,0.1,0.0001,0.1
+ord-bg-001,2024-06-01 09:15:00,USDT,Sell,350,0,650
+ord-bg-002,2024-06-03 08:00:00,USDT,Deposit,1000,0,1650

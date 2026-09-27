@@ -1,0 +1,3 @@
+Date(UTC),Coin,Amount,TransactionFee,Address,TXID,SourceAddress,PaymentID,Status
+2024-06-03 08:00:00,USDT,1000.00,0,TExampleDepositAddress,tx-example-001,,,Completed
+2024-06-05 12:00:00,ETH,0.50,0.0002,0xExampleWithdrawAddress,tx-example-002,,,Completed

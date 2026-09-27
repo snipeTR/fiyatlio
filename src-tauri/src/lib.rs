@@ -11,6 +11,7 @@ pub mod commands;
 pub mod engine;
 pub mod error;
 pub mod export;
+pub mod formats;
 pub mod models;
 pub mod parser;
 pub mod report;

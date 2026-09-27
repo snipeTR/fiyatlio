@@ -4,7 +4,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 
-	import { t } from '$lib/i18n/index.svelte';
+	import { t, type TranslationKey } from '$lib/i18n/index.svelte';
 	import { app } from '$lib/stores/app.svelte';
 	import { num, qty, signedMoney } from '$lib/format';
 	import FileDrop from '$lib/components/FileDrop.svelte';
@@ -134,5 +134,22 @@
 		</main>
 	</div>
 </div>
+
+{#if app.formatPrompt}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+		<div class="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+			<p class="text-sm font-medium">{t('format.choose')}</p>
+			<p class="mt-1 break-all text-xs text-muted-foreground">{app.formatPrompt.path}</p>
+			<div class="mt-4 flex flex-col gap-2">
+				{#each app.formatPrompt.options as option (option.id)}
+					<Button onclick={() => app.chooseFormat(option.id)}>
+						{t(option.labelKey as TranslationKey)}
+					</Button>
+				{/each}
+				<Button variant="ghost" onclick={() => app.dismissFormatPrompt()}>{t('action.close')}</Button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <Toasts />

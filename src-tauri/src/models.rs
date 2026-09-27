@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 pub const QUOTE_ASSETS: &[&str] = &[
     "FDUSD", // 5
     "USDT", "USDC", "TUSD", "BUSD", "USDP", // 4
-    "DAI", "TRY", "EUR", "GBP", "BRL", // 3
+    "DAI", "TRY", "EUR", "GBP", "BRL", "USD", // 3
     "BTC", "ETH", "BNB", // 3 (crypto quotes)
 ];
 

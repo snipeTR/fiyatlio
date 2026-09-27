@@ -7,6 +7,14 @@ Bir sürüm yayınlamak için bu üç dosyadaki numarayı yükseltin, aşağıya
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-27
+
+### Eklenen
+
+- Binance spot (eski `Date(UTC)` ve güncel `Order No`), emir geçmişi, hesap hareketi, yatırma/çekme ve USDⓈ-M vadeli başlıkları tanınır.
+- Bybit, KuCoin, OKX, Coinbase, Kraken, Gate ve Bitget exportları tanınır. Örnekler `samples/formats/` altındadır.
+- Aynı başlık birden fazla biçime uyarsa uygulama dosyayı almadan önce kullanıcıya sorar.
+
 ## [0.2.0] - 2026-09-27
 
 ### Düzeltilen

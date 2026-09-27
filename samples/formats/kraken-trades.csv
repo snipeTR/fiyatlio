@@ -1,0 +1,3 @@
+txid,ordertxid,pair,time,type,ordertype,price,cost,fee,vol,margin,misc,ledgers
+TEXAMPLE-0001,OEXAMPLE-0001,XETHZUSD,2024-06-01 09:15:00,buy,limit,3500.00,350.00,0.91,0.1000,0,,LEXAMPLE-A
+TEXAMPLE-0002,OEXAMPLE-0002,XETHZUSD,2024-06-02 14:40:00,sell,limit,3600.00,360.00,0.94,0.1000,0,,LEXAMPLE-B

@@ -173,8 +173,8 @@ Time,Pair,Side,Price,Executed,Amount,Fee
    `Time,Pair,Side,Price,Executed,Amount,Fee` ve
    `Order No,Time,Pair,Side,Price,Executed,Amount,Fee,AOR Conversion Pair,AOR Conversion Rate`.
    `Order No` ve AOR kolonları tanınır, maliyete katılmaz; ücret `Fee` sütunundadır.
-   Yeni bir borsa `parser::CSV_FORMATS` listesine bir `CsvFormat` eklenerek bağlanır: dosyanın
-   yazdığı kolon adları ve bunların Time/Pair/Side/Price/Executed/Amount/Fee karşılığı.
+   Yeni bir borsa `formats.rs` içindeki listeye bir `CsvFormat` eklenerek bağlanır.
+   Aynı kolon kümesi iki biçime birden uyarsa içe aktarma durur ve arayüz kullanıcıya sorar.
 
 ---
 

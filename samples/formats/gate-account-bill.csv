@@ -1,0 +1,4 @@
+No,Account Type,Time,Action type,Order id,Change amount,Amount,Additional Info
+1,Spot,2024-06-01 09:15:00,Order Filled,ord-gate-001,0.1 ETH,0.1 ETH,ETH_USDT buy
+2,Spot,2024-06-01 09:15:00,Order Filled,ord-gate-001,-350 USDT,650 USDT,ETH_USDT buy
+3,Spot,2024-06-03 08:00:00,Deposit,,1000 USDT,1650 USDT,

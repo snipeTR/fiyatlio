@@ -205,6 +205,7 @@ Zaman damgaları sıralama için olduğu gibi kullanılır. Bozuk satır import'
 Denemek için:
 
 - [`samples/sample-trades.csv`](samples/sample-trades.csv) — masaüstü uygulamanın çok pariteli küçük örneği
+- [`samples/formats/`](samples/formats/README.md) — Binance, Bybit, KuCoin, OKX, Coinbase, Kraken, Gate ve Bitget başlık örnekleri. Satırlar sentetik. Masaüstü uygulaması bu başlıkları tanır. Aynı başlık iki biçime uyarsa kullanıcıya sorar.
 - [`samples/paxg_ornek.csv`](samples/paxg_ornek.csv) — anonim PAXG kesiti (emir numaraları değiştirildi)
 - [`samples/paxg_referans.csv`](samples/paxg_referans.csv) — aynı açık çuvalın yuvarlak, sentetik hali
 

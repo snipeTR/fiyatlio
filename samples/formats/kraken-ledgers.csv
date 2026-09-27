@@ -1,0 +1,4 @@
+txid,refid,time,type,subtype,aclass,subclass,asset,wallet,amount,fee,balance
+LEXAMPLE-EUR,TEXAMPLE-0001,2024-06-01 09:15:00,trade,,currency,,ZEUR,spot,-350.00,0.91,650.00
+LEXAMPLE-ETH,TEXAMPLE-0001,2024-06-01 09:15:00,trade,,currency,,XETH,spot,0.1000,0.00,0.1000
+LEXAMPLE-DEP,DEXAMPLE-0001,2024-06-03 08:00:00,deposit,,currency,,ZEUR,spot,1000.00,0.00,1650.00

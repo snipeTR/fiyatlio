@@ -54,6 +54,14 @@ class AppStore {
 	/** Offered on startup when the last session had files loaded. */
 	restorableFiles = $state<string[]>([]);
 
+	/** Set when a CSV header matches more than one exchange layout. */
+	formatPrompt = $state<{
+		path: string;
+		paths: string[];
+		options: { id: string; labelKey: string }[];
+		overrides: Record<string, string>;
+	} | null>(null);
+
 	/** Handle for the auto-refresh interval, so it can be cancelled cleanly. */
 	#refreshTimer: ReturnType<typeof setInterval> | null = null;
 	#toastSeq = 0;
@@ -141,15 +149,16 @@ class AppStore {
 
 	// -- data --------------------------------------------------------------
 
-	async importFiles(paths: string[]) {
+	async importFiles(paths: string[], overrides: Record<string, string> = {}) {
 		if (paths.length === 0) return;
 
 		this.importing = true;
 		this.restorableFiles = [];
 		try {
-			this.analysis = await api.importCsvFiles(paths);
+			this.analysis = await api.importCsvFiles(paths, overrides);
 			this.trades = await api.getTrades();
 			this.settings = await api.getSettings();
+			this.formatPrompt = null;
 
 			const skipped = this.analysis.import.invalidRows;
 			const duplicates = this.analysis.import.duplicateRows;
@@ -164,10 +173,31 @@ class AppStore {
 			// briefly showing cost basis with no market value.
 			await this.refreshPrices({ silent: true });
 		} catch (error) {
+			if (error instanceof ApiError && error.kind === 'ambiguousFormat' && error.options.length > 0) {
+				this.formatPrompt = {
+					path: error.path,
+					paths,
+					options: error.options,
+					overrides
+				};
+				return;
+			}
 			this.reportError(error);
 		} finally {
 			this.importing = false;
 		}
+	}
+
+	chooseFormat(formatId: string) {
+		const prompt = this.formatPrompt;
+		if (!prompt) return;
+		const overrides = { ...prompt.overrides, [prompt.path]: formatId };
+		this.formatPrompt = null;
+		void this.importFiles(prompt.paths, overrides);
+	}
+
+	dismissFormatPrompt() {
+		this.formatPrompt = null;
 	}
 
 	async clearData() {

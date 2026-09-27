@@ -28,114 +28,14 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 
 use crate::error::{AppError, AppResult};
+use crate::formats::{self, RowOutcome};
 use crate::models::{
     AmountWithAsset, DedupKey, FileImportStats, ImportSummary, RawTradeRow, RowError, Side, Trade,
-    EXPECTED_CSV_HEADER, QUOTE_ASSETS,
+    QUOTE_ASSETS,
 };
 
 /// Timestamp layout used by every Binance spot trade-history export.
 pub const CSV_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
-
-/// One exchange export layout. `columns` is the whole header the file must
-/// contain (order does not matter). The seven field labels name which of those
-/// columns feed the engine.
-struct CsvFormat {
-    columns: &'static [&'static str],
-    time: &'static str,
-    pair: &'static str,
-    side: &'static str,
-    price: &'static str,
-    executed: &'static str,
-    amount: &'static str,
-    fee: &'static str,
-}
-
-const BINANCE_LEGACY_COLUMNS: &[&str] =
-    &["Time", "Pair", "Side", "Price", "Executed", "Amount", "Fee"];
-
-/// Current Binance "Trade History" export. `Order No` groups fills; the AOR
-/// columns are read and ignored — fee accounting uses the `Fee` column.
-const BINANCE_ORDER_COLUMNS: &[&str] = &[
-    "Order No",
-    "Time",
-    "Pair",
-    "Side",
-    "Price",
-    "Executed",
-    "Amount",
-    "Fee",
-    "AOR Conversion Pair",
-    "AOR Conversion Rate",
-];
-
-/// Registered layouts. Add an exchange by appending one entry.
-const CSV_FORMATS: &[CsvFormat] = &[
-    CsvFormat {
-        columns: BINANCE_LEGACY_COLUMNS,
-        time: "Time",
-        pair: "Pair",
-        side: "Side",
-        price: "Price",
-        executed: "Executed",
-        amount: "Amount",
-        fee: "Fee",
-    },
-    CsvFormat {
-        columns: BINANCE_ORDER_COLUMNS,
-        time: "Time",
-        pair: "Pair",
-        side: "Side",
-        price: "Price",
-        executed: "Executed",
-        amount: "Amount",
-        fee: "Fee",
-    },
-];
-
-fn header_key(name: &str) -> String {
-    name.trim().to_ascii_lowercase()
-}
-
-fn formats_label() -> String {
-    CSV_FORMATS
-        .iter()
-        .map(|format| format.columns.join(","))
-        .collect::<Vec<_>>()
-        .join(" | ")
-}
-
-/// Returns the format whose column set equals `found`, ignoring order and case.
-fn match_format(found: &[String]) -> Option<&'static CsvFormat> {
-    let mut keys: Vec<String> = found.iter().map(|name| header_key(name)).collect();
-    keys.sort();
-    keys.dedup();
-    if keys.len() != found.len() {
-        return None;
-    }
-    CSV_FORMATS.iter().find(|format| {
-        let mut expected: Vec<String> =
-            format.columns.iter().map(|name| header_key(name)).collect();
-        expected.sort();
-        expected == keys
-    })
-}
-
-fn field_indexes(found: &[String], format: &CsvFormat) -> Option<[usize; 7]> {
-    let mut index = HashMap::new();
-    for (position, name) in found.iter().enumerate() {
-        index.insert(header_key(name), position);
-    }
-    let at = |label: &str| index.get(&header_key(label)).copied();
-    Some([
-        at(format.time)?,
-        at(format.pair)?,
-        at(format.side)?,
-        at(format.price)?,
-        at(format.executed)?,
-        at(format.amount)?,
-        at(format.fee)?,
-    ])
-}
 
 // ---------------------------------------------------------------------------
 // Scalar parsing
@@ -403,13 +303,38 @@ pub fn parse_file(path: &Path, file_index: usize) -> AppResult<ParsedFile> {
     parse_bytes(&bytes, &display, file_index)
 }
 
+pub fn parse_file_with(
+    path: &Path,
+    file_index: usize,
+    format_id: Option<&str>,
+) -> AppResult<ParsedFile> {
+    let display = path.to_string_lossy().to_string();
+    if !path.exists() {
+        return Err(AppError::FileNotFound(display));
+    }
+    let bytes = std::fs::read(path).map_err(|source| AppError::FileRead {
+        path: display.clone(),
+        source,
+    })?;
+    parse_bytes_with(&bytes, &display, file_index, format_id)
+}
+
 /// Validates an in-memory CSV buffer. Separated from [`parse_file`] so tests can
 /// exercise the parser without touching the filesystem.
 pub fn parse_bytes(bytes: &[u8], display_path: &str, file_index: usize) -> AppResult<ParsedFile> {
+    parse_bytes_with(bytes, display_path, file_index, None)
+}
+
+pub fn parse_bytes_with(
+    bytes: &[u8],
+    display_path: &str,
+    file_index: usize,
+    format_id: Option<&str>,
+) -> AppResult<ParsedFile> {
     // Excel-written exports often carry a UTF-8 BOM, which would otherwise become
     // part of the first header name and fail the header check.
     let body = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
-    parse_reader(body, display_path, file_index)
+    parse_reader(body, display_path, file_index, format_id)
 }
 
 /// Core parsing routine.
@@ -417,6 +342,7 @@ pub fn parse_reader<R: Read>(
     reader: R,
     display_path: &str,
     file_index: usize,
+    format_id: Option<&str>,
 ) -> AppResult<ParsedFile> {
     let mut csv_reader = csv::ReaderBuilder::new()
         .has_headers(true)
@@ -436,41 +362,50 @@ pub fn parse_reader<R: Read>(
 
     // A file matches a registered exchange when its header names are that
     // format's column set. Position does not matter: each column is named.
-    // `Order No` and the AOR columns are recognized and then left unused.
     let found: Vec<String> = headers.iter().map(|h| h.trim().to_string()).collect();
-    let Some(format) = match_format(&found) else {
+    let hits = formats::matching(&found);
+    let choices = || {
+        hits.iter()
+            .map(|format| crate::error::FormatChoice {
+                id: format.id.to_string(),
+                label_key: format.label_key.to_string(),
+            })
+            .collect()
+    };
+    let format = if hits.is_empty() {
         return Err(AppError::CsvHeader {
             path: display_path.to_string(),
-            expected: formats_label(),
+            expected: formats::accepted_labels(),
             found: found.join(","),
         });
-    };
-    let Some(indexes) = field_indexes(&found, format) else {
-        return Err(AppError::CsvHeader {
+    } else if let Some(id) = format_id {
+        hits.iter()
+            .copied()
+            .find(|format| format.id == id)
+            .ok_or_else(|| AppError::AmbiguousFormat {
+                path: display_path.to_string(),
+                options: choices(),
+            })?
+    } else if hits.len() == 1 {
+        hits[0]
+    } else {
+        return Err(AppError::AmbiguousFormat {
             path: display_path.to_string(),
-            expected: formats_label(),
-            found: found.join(","),
+            options: choices(),
         });
     };
 
-    // `RawTradeRow` always deserializes the seven canonical names, in this order.
-    let headers = csv::StringRecord::from(EXPECTED_CSV_HEADER.to_vec());
-
-    let mut trades = Vec::new();
+    let header_names: Vec<String> = headers.iter().map(|name| name.to_string()).collect();
+    let mut rows = Vec::new();
     let mut errors = Vec::new();
     let mut total_rows = 0usize;
 
     for (offset, record) in csv_reader.records().enumerate() {
-        // 1-based so the number matches what a spreadsheet shows for the row,
-        // header excluded.
         let row_index = offset + 1;
         total_rows += 1;
-
         let record = match record {
             Ok(record) => record,
             Err(source) => {
-                // A ragged or unterminated record is a row-level problem, not a
-                // reason to discard the whole file.
                 errors.push(RowError {
                     file: display_path.to_string(),
                     file_index,
@@ -482,56 +417,37 @@ pub fn parse_reader<R: Read>(
                 continue;
             }
         };
-
-        let raw_line = record.iter().collect::<Vec<_>>().join(",");
-        let mut canonical = csv::StringRecord::new();
-        let mut missing_field = false;
-        for index in indexes {
-            match record.get(index) {
-                Some(value) => canonical.push_field(value),
-                None => {
-                    errors.push(RowError {
-                        file: display_path.to_string(),
-                        file_index,
-                        row_index,
-                        reason_key: "error.row.malformed".to_string(),
-                        detail: "row is shorter than its header".to_string(),
-                        raw: raw_line.clone(),
-                    });
-                    missing_field = true;
-                    break;
-                }
-            }
+        let mut cells = HashMap::new();
+        for (name, value) in header_names.iter().zip(record.iter()) {
+            cells.insert(formats::header_key(name), value.to_string());
         }
-        if missing_field {
-            continue;
-        }
+        rows.push((row_index, cells));
+    }
 
-        let row: RawTradeRow = match canonical.deserialize(Some(&headers)) {
-            Ok(row) => row,
-            Err(source) => {
-                errors.push(RowError {
-                    file: display_path.to_string(),
-                    file_index,
-                    row_index,
-                    reason_key: "error.row.malformed".to_string(),
-                    detail: source.to_string(),
-                    raw: raw_line,
-                });
-                continue;
-            }
-        };
-
-        match validate_row(&row, display_path, file_index, row_index) {
-            Ok(trade) => trades.push(trade),
-            Err((reject, detail)) => errors.push(RowError {
+    let mut trades = Vec::new();
+    for (row_index, outcome) in formats::interpret(format, &rows) {
+        match outcome {
+            RowOutcome::Skip => {}
+            RowOutcome::Invalid(detail) => errors.push(RowError {
                 file: display_path.to_string(),
                 file_index,
                 row_index,
-                reason_key: reject.key().to_string(),
+                reason_key: "error.row.malformed".to_string(),
                 detail,
-                raw: raw_line,
+                raw: String::new(),
             }),
+            RowOutcome::Trade(row) => match validate_row(&row, display_path, file_index, row_index)
+            {
+                Ok(trade) => trades.push(trade),
+                Err((reject, detail)) => errors.push(RowError {
+                    file: display_path.to_string(),
+                    file_index,
+                    row_index,
+                    reason_key: reject.key().to_string(),
+                    detail,
+                    raw: String::new(),
+                }),
+            },
         }
     }
 
@@ -673,9 +589,18 @@ pub fn merge(files: Vec<ParsedFile>, deduplicate: bool) -> (Vec<Trade>, ImportSu
 /// A header-level failure in any single file aborts the whole import, because a
 /// file we cannot interpret at all would silently skew every total.
 pub fn import_files(paths: &[String], deduplicate: bool) -> AppResult<(Vec<Trade>, ImportSummary)> {
+    import_files_with(paths, deduplicate, &HashMap::new())
+}
+
+pub fn import_files_with(
+    paths: &[String],
+    deduplicate: bool,
+    format_overrides: &HashMap<String, String>,
+) -> AppResult<(Vec<Trade>, ImportSummary)> {
     let mut parsed = Vec::with_capacity(paths.len());
     for (file_index, path) in paths.iter().enumerate() {
-        parsed.push(parse_file(Path::new(path), file_index)?);
+        let format_id = format_overrides.get(path).map(String::as_str);
+        parsed.push(parse_file_with(Path::new(path), file_index, format_id)?);
     }
     Ok(merge(parsed, deduplicate))
 }
@@ -751,6 +676,23 @@ mod tests {
         let err = parse_bytes(b"Date,Symbol,Side\n", "bad.csv", 0)
             .expect_err("header mismatch must reject the file");
         assert_eq!(err.kind(), "csvHeader");
+    }
+
+    #[test]
+    fn every_format_sample_is_recognized() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/formats");
+        let mut seen = 0usize;
+        for entry in std::fs::read_dir(&dir).expect("samples/formats") {
+            let path = entry.expect("entry").path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("csv") {
+                continue;
+            }
+            let bytes = std::fs::read(&path).expect("read sample");
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            parse_bytes(&bytes, &name, 0).unwrap_or_else(|err| panic!("{name}: {err}"));
+            seen += 1;
+        }
+        assert!(seen >= 16, "expected the format samples, found {seen}");
     }
 
     #[test]

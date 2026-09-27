@@ -1,0 +1,3 @@
+Spot Pairs,Order Type,Direction,feeCoin,ExecFeeV2,Filled Value,Filled Price,Filled Quantity,Fees,Transaction ID,Order No.,Timestamp (UTC)
+ETHUSDT,Limit,BUY,ETH,0.0001,350,3500,0.1,0.0001,tx-bybit-001,ord-bybit-001,2024-06-01 09:15:00
+ETHUSDT,Limit,SELL,USDT,0.36,360,3600,0.1,0.36,tx-bybit-002,ord-bybit-002,2024-06-02 14:40:00

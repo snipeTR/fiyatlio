@@ -26,6 +26,8 @@ export class ApiError extends Error {
 	readonly kind: string;
 	readonly messageKey: string;
 	readonly detail: string;
+	readonly path: string;
+	readonly options: { id: string; labelKey: string }[];
 
 	constructor(payload: AppErrorPayload) {
 		super(payload.detail || payload.messageKey);
@@ -33,6 +35,8 @@ export class ApiError extends Error {
 		this.kind = payload.kind;
 		this.messageKey = payload.messageKey;
 		this.detail = payload.detail;
+		this.path = payload.path ?? '';
+		this.options = payload.options ?? [];
 	}
 }
 
@@ -66,7 +70,8 @@ export const api = {
 
 	getAnalysis: () => call<AnalysisResult>('get_analysis'),
 	getTrades: () => call<Trade[]>('get_trades'),
-	importCsvFiles: (paths: string[]) => call<AnalysisResult>('import_csv_files', { paths }),
+	importCsvFiles: (paths: string[], formatOverrides: Record<string, string> = {}) =>
+		call<AnalysisResult>('import_csv_files', { paths, formatOverrides }),
 	clearData: () => call<AnalysisResult>('clear_data'),
 	refreshPrices: () => call<AnalysisResult>('refresh_prices'),
 
